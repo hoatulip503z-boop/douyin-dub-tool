@@ -5,7 +5,6 @@ import re
 import edge_tts
 from google import genai
 from moviepy.editor import AudioFileClip, CompositeAudioClip, VideoFileClip
-import moviepy.audio.fx.all as afx
 import streamlit as st
 import whisper
 
@@ -13,8 +12,8 @@ st.set_page_config(
     page_title="Auto Gensub & Dubbing AI", page_icon="🎬", layout="wide"
 )
 
-st.title("🎬 Tool Dịch & Lồng Tiếng Khớp Nhịp Băng Hình 100%")
-st.caption("Tự động co giãn tốc độ audio (Time-Stretch) để khớp từng frame hình")
+st.title("🎬 Tool Dịch & Lồng Tiếng Khớp Nhịp Douyin")
+st.caption("Tự động bóc thoại -> Dịch chuẩn Review -> Lồng tiếng mượt mà")
 
 # --- CẤU HÌNH SIDEBAR ---
 with st.sidebar:
@@ -26,7 +25,7 @@ with st.sidebar:
 
     st.subheader("🔊 Tùy Chỉnh Giọng Đọc AI")
     voice_options = {
-        "vi-VN-HoaiMyNeural": "Giọng Nữ Review (Hoài Mỹ - Mặc định)",
+        "vi-VN-HoaiMyNeural": "Giọng Nữ Review Douyin (Hoài Mỹ)",
         "vi-VN-NamMinhNeural": "Giọng Nam Review (Nam Minh)",
     }
 
@@ -58,7 +57,7 @@ def transcribe_chinese_segments(video_path):
     return result.get("segments", [])
 
 
-# --- HÀM DỊCH CHUẨN ĐỘ DÀI KHỚP NHỊP ---
+# --- HÀM DỊCH GỘP BẰNG GEMINI ---
 def translate_all_segments_batch(segments, api_key):
     if not segments:
         return []
@@ -70,29 +69,28 @@ def translate_all_segments_batch(segments, api_key):
         duration = seg["end"] - seg["start"]
         text = seg["text"].strip()
         if text:
-            lines.append(
-                f"{i} (Thời lượng {duration:.1f}s): {text}"
-            )
+            lines.append(f"{i} (Thời lượng {duration:.1f}s): {text}")
 
     input_text = "\n".join(lines)
 
     prompt = f"""
-    Bạn là biên dịch viên lồng tiếng chuyên nghiệp cho video ngắn Douyin/TikTok chỉnh ảnh/bóp dáng.
-    Dưới đây là danh sách các câu thoại tiếng Trung kèm thời lượng tối đa cho mỗi câu.
+    Bạn là biên dịch viên lồng tiếng cho video ngắn Douyin/TikTok chỉnh ảnh/bóp dáng (App Xingtu/Meitu).
+    Dưới đây là danh sách các câu thoại tiếng Trung kèm thời lượng tối đa.
 
     Nhiệm vụ: Dịch sang Tiếng Việt CỰC KỲ NGẮN GỌN sao cho đọc vừa đủ trong thời lượng cho phép.
 
-    QUY TẮC DỊCH CHẮC CHẮN KHỚP NHỊP:
-    1. Dùng từ ngữ ngắn gọn, văn phong nói tự nhiên, bắt trend:
-       - "P图" -> "chỉnh hình" / "bóp dáng"
-       - "背景弯了" -> "hậu cảnh bị méo"
-       - "瘦身" / "拉长腿" -> "thon người" / "kéo chân"
-    2. Nếu thời lượng câu dưới 2 giây, chỉ dịch từ 3 - 5 từ.
+    QUY TẮC DỊCH CHUẨN REVIEW:
+    1. Dùng từ ngữ ngắn gọn, tự nhiên, văn phong nói ngọt ngào, bắt trend:
+       - "P图" -> "chỉnh hình" / "bóp dáng" (KHÔNG để chữ P).
+       - "背景弯了" -> "hậu cảnh bị méo".
+       - "瘦身" / "拉长腿" -> "thon người" / "kéo chân".
+    2. Nếu thời lượng câu dưới 2.5 giây, chỉ dịch từ 3 - 6 từ.
     3. Trả về đúng JSON mảng thuần túy:
     [
       {{"id": 0, "vi": "Nội dung dịch câu 0"}},
       {{"id": 1, "vi": "Nội dung dịch câu 1"}}
     ]
+    Không viết thêm lời dẫn nào khác.
 
     Danh sách câu thoại:
     {input_text}
@@ -139,21 +137,36 @@ def translate_all_segments_batch(segments, api_key):
     } for s in segments]
 
 
-# --- TẠO FILE ÂM THANH EDGE-TTS ---
-async def generate_single_tts_async(text, voice, output_path):
-    communicate = edge_tts.Communicate(text, voice)
+# --- TẠO FILE ÂM THANH EDGE-TTS VỚI TỐC ĐỘ TỰ ĐỘNG KHỚP NHỊP ---
+async def generate_single_tts_async(text, voice, rate_str, output_path):
+    communicate = edge_tts.Communicate(text, voice, rate=rate_str)
     await communicate.save(output_path)
 
 
-def generate_tts_safe(text, voice, output_path):
+def generate_tts_safe(text, voice, target_duration, output_path):
     clean_text = text.strip()
     if not clean_text:
         return False
+
+    # Ước lượng số từ để điều chỉnh tốc độ nói tự động bằng edge-tts (tránh dùng moviepy fx gây lỗi)
+    word_count = len(clean_text.split())
+    # Trung bình 1 giây đọc khoảng 2.5 - 3 từ
+    estimated_normal_time = word_count / 2.8
+
+    if target_duration > 0 and estimated_normal_time > target_duration:
+        # Tăng tốc độ đọc nếu câu quá dài so với time slot
+        speed_boost = int(
+            min(40, max(10, ((estimated_normal_time / target_duration) - 1) * 100))
+        )
+        rate_str = f"+{speed_boost}%"
+    else:
+        rate_str = "+0%"
+
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(
-            generate_single_tts_async(clean_text, voice, output_path)
+            generate_single_tts_async(clean_text, voice, rate_str, output_path)
         )
         loop.close()
         return os.path.exists(output_path) and os.path.getsize(output_path) > 0
@@ -171,7 +184,7 @@ if uploaded_video:
     with open(temp_video_path, "wb") as f:
         f.write(uploaded_video.read())
 
-if st.button("🚀 Bắt Đầu Ép Khớp Nhịp 100%", type="primary"):
+if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng", type="primary"):
     if not uploaded_video:
         st.error("⚠️ Vui lòng tải video lên trước!")
     elif not gemini_api_key:
@@ -182,17 +195,17 @@ if st.button("🚀 Bắt Đầu Ép Khớp Nhịp 100%", type="primary"):
 
         try:
             # 1. Bóc thoại bằng Whisper
-            with st.spinner("1/3 🎧 Phân tích chính xác từng milisecond..."):
+            with st.spinner("1/3 🎧 Phân tích mốc thời gian video..."):
                 segments = transcribe_chinese_segments("temp_input.mp4")
 
             # 2. Dịch bằng Gemini
-            with st.spinner("2/3 🤖 Dịch chuẩn độ dài kịch bản..."):
+            with st.spinner("2/3 🤖 Dịch chuẩn kịch bản Review Douyin..."):
                 translated_segments = translate_all_segments_batch(
                     segments, gemini_api_key
                 )
 
-            # 3. Lồng tiếng & Co giãn tốc độ (Time-Stretch)
-            with st.spinner("3/3 🎬 Đang ép tốc độ âm thanh chuẩn hình..."):
+            # 3. Lồng tiếng & Ghép nhạc
+            with st.spinner("3/3 🎬 Đang tạo giọng đọc và ghép video..."):
                 audio_clips = []
 
                 for i, item in enumerate(translated_segments):
@@ -200,22 +213,15 @@ if st.button("🚀 Bắt Đầu Ép Khớp Nhịp 100%", type="primary"):
                         continue
 
                     audio_filename = f"temp_seg_{i}.mp3"
+                    target_dur = item["end"] - item["start"]
+
                     success = generate_tts_safe(
-                        item["vi"], selected_voice, audio_filename
+                        item["vi"], selected_voice, target_dur, audio_filename
                     )
 
                     if success:
                         temp_files.append(audio_filename)
                         clip = AudioFileClip(audio_filename)
-
-                        target_duration = item["end"] - item["start"]
-                        if target_duration > 0.3:
-                            # Tính tỷ lệ speedup/slowdown để vừa khít mốc thời gian gốc
-                            factor = clip.duration / target_duration
-                            # Giới hạn tỷ lệ co giãn từ 0.7x - 1.5x để giọng không bị méo
-                            factor = max(0.7, min(1.5, factor))
-                            clip = clip.fx(afx.time_stretch, factor)
-
                         clip = clip.set_start(item["start"])
                         audio_clips.append(clip)
 
@@ -252,9 +258,9 @@ if st.button("🚀 Bắt Đầu Ép Khớp Nhịp 100%", type="primary"):
 
             with open(output_video_path, "rb") as file:
                 st.download_button(
-                    label="📥 Tải Video Đã Khớp Nhịp",
+                    label="📥 Tải Video Đã Lồng Tiếng",
                     data=file,
-                    file_name="douyin_dubbed_synced.mp4",
+                    file_name="douyin_dubbed.mp4",
                     mime="video/mp4",
                 )
 
