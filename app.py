@@ -1,7 +1,7 @@
 import asyncio
 import os
 import edge_tts
-import google.generativeai as genai
+from google import genai
 from moviepy.editor import AudioFileClip, CompositeAudioClip, VideoFileClip
 import streamlit as st
 import whisper
@@ -62,17 +62,9 @@ def transcribe_chinese(video_path):
     return result["text"]
 
 
-# --- HÀM DỊCH TIẾNG VIỆT CHUẨN BẰNG GEMINI AI ---
+# --- HÀM DỊCH TIẾNG VIỆT CHUẨN BẰNG GEMINI SDK MỚI ---
 def translate_with_gemini(text_zh, api_key):
-    genai.configure(api_key=api_key)
-
-    # Danh sách các model tương thích để thử lần lượt
-    candidate_models = [
-        "gemini-2.5-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-pro",
-    ]
+    client = genai.Client(api_key=api_key.strip())
 
     prompt = f"""
     Bạn là một biên tập viên chuyên dịch thuật video Douyin/TikTok ngắn. 
@@ -85,19 +77,11 @@ def translate_with_gemini(text_zh, api_key):
     Thoại tiếng Trung: "{text_zh}"
     """
 
-    for model_name in candidate_models:
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            if response and response.text:
-                return response.text.strip()
-        except Exception:
-            continue
-
-    raise Exception(
-        "Không thể kết nối với mô hình Gemini AI. Vui lòng kiểm tra lại API Key"
-        " của bạn!"
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
     )
+    return response.text.strip()
 
 
 # --- HÀM TẠO VOICE & GHÉP VIDEO ---
