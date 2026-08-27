@@ -76,11 +76,21 @@ def translate_with_gemini(text_zh, api_key):
     Thoại tiếng Trung: "{text_zh}"
     """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
+    # Ưu tiên chạy gemini-3.6-flash, tự động chuyển sang gemini-2.5-flash nếu cần
+    for model_name in ["gemini-3.6-flash", "gemini-2.5-flash"]:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+            )
+            if response and response.text:
+                return response.text.strip()
+        except Exception:
+            continue
+
+    raise Exception(
+        "Không thể kết nối tới mô hình Gemini AI. Vui lòng kiểm tra lại API Key!"
     )
-    return response.text.strip()
 
 
 # --- HÀM TẠO VOICE & GHÉP VIDEO ---
