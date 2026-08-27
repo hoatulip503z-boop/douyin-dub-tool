@@ -5,7 +5,6 @@ import re
 import edge_tts
 from google import genai
 from moviepy.editor import AudioFileClip, CompositeAudioClip, VideoFileClip
-import moviepy.audio.fx.all as afx
 import streamlit as st
 import whisper
 
@@ -96,7 +95,7 @@ def translate_all_segments_batch(segments, api_key):
        - "拉长腿" -> Dịch là "kéo dài chân".
        - "瘦身" / "瘦腿" -> Dịch là "thon gọn người" / "làm thon chân".
        - "背景保护" -> Dịch là "bảo vệ phông nền" / "giữ phông nền".
-    2. Câu dịch phải CỰC KỲ NGẮN GỌN (dưới 8 từ/câu) để đảm bảo đọc kịp thời gian thoại gốc.
+    2. Câu dịch phải CỰC KỲ NGẮN GỌN (dưới 8 từ/câu) để đọc kịp thời gian thoại gốc.
     3. Định dạng đầu ra BẮT BUỘC là mảng JSON thuần túy theo mẫu:
     [
       {{"id": 0, "vi": "Nội dung dịch câu 0"}},
@@ -231,12 +230,30 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
                         continue
 
                     audio_filename = f"temp_seg_{i}.mp3"
+                    allowed_duration = item["end"] - item["start"]
 
-                    # Tạo voice mặc định
+                    # Ước tính nếu câu nói quá dài so với thời lượng segment -> Tăng tốc rate cho Edge-TTS
+                    word_count = len(item["vi"].split())
+                    dynamic_rate = speech_rate
+
+                    if allowed_duration > 0:
+                        # Tốc độ đọc trung bình bình thường ~2.5 từ/giây
+                        est_duration = word_count / 2.5
+                        if est_duration > allowed_duration:
+                            # Cần tăng tốc độ đọc của Edge-TTS lên
+                            speed_boost = int(
+                                (est_duration / allowed_duration - 1) * 100
+                            )
+                            speed_boost = min(
+                                max(speed_boost, 10), 60
+                            )  # Giới hạn tăng tối đa 60%
+                            dynamic_rate = f"+{speed_boost}%"
+
+                    # Tạo voice với tốc độ động đã điều chỉnh
                     success = generate_tts_safe(
                         item["vi"],
                         selected_voice,
-                        speech_rate,
+                        dynamic_rate,
                         audio_filename,
                     )
 
@@ -244,21 +261,9 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
                         temp_files.append(audio_filename)
                         clip = AudioFileClip(audio_filename)
 
-                        allowed_duration = item["end"] - item["start"]
-
-                        # Nếu âm thanh dài hơn thời gian cho phép -> tăng tốc độ clip dùng module afx.speedx
-                        if (
-                            clip.duration > allowed_duration
-                            and allowed_duration > 0.3
-                        ):
-                            speed_factor = clip.duration / allowed_duration
-                            clip = afx.speedx(clip, factor=speed_factor)
-
-                        # Cắt chính xác phạm vi phát
-                        if allowed_duration > 0:
-                            clip = clip.subclip(
-                                0, min(clip.duration, allowed_duration)
-                            )
+                        # Giới hạn/cắt gọn độ dài clip để tuyệt đối không chờm sang câu sau
+                        if allowed_duration > 0 and clip.duration > allowed_duration:
+                            clip = clip.subclip(0, allowed_duration)
 
                         clip = clip.set_start(item["start"])
                         audio_clips.append(clip)
