@@ -20,7 +20,6 @@ st.caption(
 with st.sidebar:
     st.header("⚙️ Cấu Hình AI")
 
-    # Nhập API Key miễn phí của Gemini (Lấy tại: aistudio.google.com)
     gemini_api_key = st.text_input(
         "Nhập Gemini API Key (Miễn phí):", type="password"
     )
@@ -62,7 +61,7 @@ def transcribe_chinese(video_path):
     return result["text"]
 
 
-# --- HÀM DỊCH TIẾNG VIỆT CHUẨN BẰNG GEMINI SDK MỚI ---
+# --- HÀM DỊCH TIẾNG VIỆT BẰNG GEMINI API ---
 def translate_with_gemini(text_zh, api_key):
     client = genai.Client(api_key=api_key.strip())
 
@@ -130,21 +129,18 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng", type="pri
             with open(temp_video_path, "wb") as f:
                 f.write(uploaded_video.read())
 
-            # Bước 1: Whisper bóc thoại tiếng Trung
             with st.spinner(
                 "1/3 🎧 Whisper AI đang lắng nghe và bóc thoại Tiếng Trung..."
             ):
                 zh_text = transcribe_chinese(temp_video_path)
                 st.info(f"🗣️ **Thoại tiếng Trung nhận diện được:** {zh_text}")
 
-            # Bước 2: Gemini dịch sang tiếng Việt
             with st.spinner(
                 "2/3 🤖 Gemini AI đang dịch sang Tiếng Việt mượt mà..."
             ):
                 vi_text = translate_with_gemini(zh_text, gemini_api_key)
                 st.success(f"📝 **Bản dịch Tiếng Việt (AI):** {vi_text}")
 
-            # Bước 3: Lồng tiếng & Render video
             with st.spinner(
                 "3/3 🎬 Đang tạo giọng đọc AI & Ghép vào video..."
             ):
@@ -176,7 +172,6 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng", type="pri
             st.error(f"❌ Xảy ra lỗi trong quá trình xử lý: {str(e)}")
 
         finally:
-            # Dọn dẹp tài nguyên file tạm
             for p in [temp_video_path, temp_audio_path]:
                 if os.path.exists(p):
                     os.remove(p)
