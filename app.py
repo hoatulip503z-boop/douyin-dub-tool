@@ -11,6 +11,7 @@ st.set_page_config(
 st.title("🎬 Tool Dịch & Lồng Tiếng Video Douyin (100% Free)")
 st.caption("Tự động đọc bản dịch tiếng Việt, ghép khớp Timeline và xuất Video")
 
+# --- BẢNG CẤU HÌNH TRÊN GIAO DIỆN ---
 with st.sidebar:
     st.header("⚙️ Tùy Chỉnh Âm Thanh")
     voice_option = st.selectbox(
@@ -38,6 +39,7 @@ with st.sidebar:
         disabled=not keep_bg_music,
     )
 
+# --- KHU VỰC UPLOAD & NHẬP LIỆU ---
 col1, col2 = st.columns(2)
 
 with col1:
@@ -83,6 +85,7 @@ def process_video(
     vi_voice.close()
 
 
+# --- NÚT XỬ LÝ ---
 if st.button("🚀 Bắt đầu Lồng Tiếng & Render Video", type="primary"):
     if not uploaded_video or not vietnamese_text.strip():
         st.error(
