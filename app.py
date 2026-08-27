@@ -10,10 +10,13 @@ st.set_page_config(
     page_title="Auto Gensub & Dubbing AI", page_icon="🎬", layout="wide"
 )
 
-st.title("🎬 Tool Tự Động Dịch & Lồng Tiếng Douyin (Gensub Style)")
-st.caption("Tự động nhận diện tiếng Trung -> AI Dịch Việt bắt trend -> Lồng tiếng & Ghép Video")
+st.title("🎬 Tool Tự Động Dịch & Lồng Tiếng Douyin (100% Free)")
+st.caption(
+    "Tự động nhận diện tiếng Trung -> AI Dịch Việt bắt trend -> Lồng tiếng &"
+    " Ghép Video"
+)
 
-# --- CAU HINH SIDEBAR ---
+# --- CẤU HÌNH SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Cấu Hình AI")
 
@@ -27,9 +30,7 @@ with st.sidebar:
         "Chọn giọng đọc AI:",
         options=["vi-VN-NamMinhNeural", "vi-VN-HoaiMyNeural"],
         format_func=lambda x: (
-            "Giọng Nam (Nam Minh)"
-            if "Nam" in x
-            else "Giọng Nữ (Hoài Mỹ)"
+            "Giọng Nam (Nam Minh)" if "Nam" in x else "Giọng Nữ (Hoài Mỹ)"
         ),
     )
 
@@ -49,10 +50,9 @@ with st.sidebar:
     )
 
 
-# --- HAM TACH TIENG TRUNG BANG WHISPER ---
+# --- HÀM TÁCH TIẾNG TRUNG BẰNG WHISPER ---
 @st.cache_resource
 def load_whisper_model():
-    # Dùng model 'base' để chạy nhanh và nhẹ trên Streamlit Cloud
     return whisper.load_model("base")
 
 
@@ -62,10 +62,17 @@ def transcribe_chinese(video_path):
     return result["text"]
 
 
-# --- HAM DICH TIENG VIET HAY BANG GEMINI AI ---
+# --- HÀM DỊCH TIẾNG VIỆT CHUẨN BẰNG GEMINI AI ---
 def translate_with_gemini(text_zh, api_key):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-flash")
+
+    # Danh sách các model tương thích để thử lần lượt
+    candidate_models = [
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-pro",
+    ]
 
     prompt = f"""
     Bạn là một biên tập viên chuyên dịch thuật video Douyin/TikTok ngắn. 
@@ -77,11 +84,23 @@ def translate_with_gemini(text_zh, api_key):
 
     Thoại tiếng Trung: "{text_zh}"
     """
-    response = model.generate_content(prompt)
-    return response.text.strip()
+
+    for model_name in candidate_models:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            if response and response.text:
+                return response.text.strip()
+        except Exception:
+            continue
+
+    raise Exception(
+        "Không thể kết nối với mô hình Gemini AI. Vui lòng kiểm tra lại API Key"
+        " của bạn!"
+    )
 
 
-# --- HAM TAO VOICE & GHEP VIDEO ---
+# --- HÀM TẠO VOICE & GHÉP VIDEO ---
 async def generate_tts(text, voice, rate, output_path):
     communicate = edge_tts.Communicate(text, voice, rate=rate)
     await communicate.save(output_path)
@@ -106,7 +125,7 @@ def process_video(video_path, audio_path, output_path, keep_bg, bg_volume):
     vi_voice.close()
 
 
-# --- GIAO DIEN CHINH ---
+# --- GIAO DIỆN CHÍNH ---
 uploaded_video = st.file_uploader(
     "Tải video Douyin gốc tiếng Trung lên (.mp4)", type=["mp4", "mov"]
 )
@@ -119,51 +138,61 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng", type="pri
             "⚠️ Vui lòng nhập Gemini API Key ở thanh bên trái để AI dịch!"
         )
     else:
-        # Tạo file tạm
         temp_video_path = "temp_input.mp4"
         temp_audio_path = "temp_voice.mp3"
         output_video_path = "output_dubbed.mp4"
 
-        with open(temp_video_path, "wb") as f:
-            f.write(uploaded_video.read())
+        try:
+            with open(temp_video_path, "wb") as f:
+                f.write(uploaded_video.read())
 
-        # Bước 1: Whisper bóc tiếng Trung
-        with st.spinner("1/3 🎧 Whisper AI đang lắng nghe và bóc thoại Tiếng Trung..."):
-            zh_text = transcribe_chinese(temp_video_path)
-            st.info(f"🗣️ **Thoại tiếng Trung nhận diện được:** {zh_text}")
+            # Bước 1: Whisper bóc thoại tiếng Trung
+            with st.spinner(
+                "1/3 🎧 Whisper AI đang lắng nghe và bóc thoại Tiếng Trung..."
+            ):
+                zh_text = transcribe_chinese(temp_video_path)
+                st.info(f"🗣️ **Thoại tiếng Trung nhận diện được:** {zh_text}")
 
-        # Bước 2: Gemini dịch sang Tiếng Việt
-        with st.spinner("2/3 🤖 Gemini AI đang dịch sang Tiếng Việt mượt mà..."):
-            vi_text = translate_with_gemini(zh_text, gemini_api_key)
-            st.success(f"📝 **Bản dịch Tiếng Việt (AI):** {vi_text}")
+            # Bước 2: Gemini dịch sang tiếng Việt
+            with st.spinner(
+                "2/3 🤖 Gemini AI đang dịch sang Tiếng Việt mượt mà..."
+            ):
+                vi_text = translate_with_gemini(zh_text, gemini_api_key)
+                st.success(f"📝 **Bản dịch Tiếng Việt (AI):** {vi_text}")
 
-        # Bước 3: Lồng tiếng & Render
-        with st.spinner("3/3 🎬 Đang tạo giọng đọc AI & Ghép vào video..."):
-            asyncio.run(
-                generate_tts(
-                    vi_text, voice_option, speech_rate, temp_audio_path
+            # Bước 3: Lồng tiếng & Render video
+            with st.spinner(
+                "3/3 🎬 Đang tạo giọng đọc AI & Ghép vào video..."
+            ):
+                asyncio.run(
+                    generate_tts(
+                        vi_text, voice_option, speech_rate, temp_audio_path
+                    )
                 )
-            )
-            process_video(
-                temp_video_path,
-                temp_audio_path,
-                output_video_path,
-                keep_bg_music,
-                bg_vol,
-            )
+                process_video(
+                    temp_video_path,
+                    temp_audio_path,
+                    output_video_path,
+                    keep_bg_music,
+                    bg_vol,
+                )
 
-        st.balloons()
-        st.video(output_video_path)
+            st.balloons()
+            st.video(output_video_path)
 
-        with open(output_video_path, "rb") as file:
-            st.download_button(
-                label="📥 Tải Video Đã Lồng Tiếng Về Máy",
-                data=file,
-                file_name="douyin_dubbed_vietnamese.mp4",
-                mime="video/mp4",
-            )
+            with open(output_video_path, "rb") as file:
+                st.download_button(
+                    label="📥 Tải Video Đã Lồng Tiếng Về Máy",
+                    data=file,
+                    file_name="douyin_dubbed_vietnamese.mp4",
+                    mime="video/mp4",
+                )
 
-        # Dọn dẹp
-        for p in [temp_video_path, temp_audio_path]:
-            if os.path.exists(p):
-                os.remove(p)
+        except Exception as e:
+            st.error(f"❌ Xảy ra lỗi trong quá trình xử lý: {str(e)}")
+
+        finally:
+            # Dọn dẹp tài nguyên file tạm
+            for p in [temp_video_path, temp_audio_path]:
+                if os.path.exists(p):
+                    os.remove(p)
