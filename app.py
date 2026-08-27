@@ -12,11 +12,8 @@ st.set_page_config(
     page_title="Auto Gensub & Dubbing AI", page_icon="🎬", layout="wide"
 )
 
-st.title("🎬 Tool Tự Động Dịch & Lồng Tiếng Khớp Nhịp (GenSubAI Style)")
-st.caption(
-    "Tự động bóc thoại -> Dịch chuẩn Review -> Tự động căn chỉnh tốc độ tránh"
-    " đọc đè"
-)
+st.title("🎬 Tool Tự Động Dịch & Lồng Tiếng Khớp Nhịp Douyin")
+st.caption("Tự động bóc thoại -> Dịch chuẩn Review -> Lồng tiếng dồn dập mượt mà")
 
 # --- CẤU HÌNH SIDEBAR ---
 with st.sidebar:
@@ -28,11 +25,9 @@ with st.sidebar:
 
     st.subheader("🔊 Tùy Chỉnh Giọng Đọc AI")
     voice_options = {
-        "vi-VN-HoaiMyNeural": "Giọng Nữ Nữ tính / Review (Hoài Mỹ)",
-        "vi-VN-NamMinhNeural": "Giọng Nam Tự nhiên / Đọc nhanh (Nam Minh)",
-        "vi-VN-NamMinhMultilingualNeural": (
-            "Giọng Nam Truyền cảm / Chuẩn (Nam Minh Pro)"
-        ),
+        "vi-VN-HoaiMyNeural": "Giọng Nữ Review Douyin (Hoài Mỹ)",
+        "vi-VN-NamMinhNeural": "Giọng Nam Đọc Nhanh (Nam Minh)",
+        "vi-VN-NamMinhMultilingualNeural": "Giọng Nam Chuẩn Pro",
     }
 
     selected_voice = st.selectbox(
@@ -42,9 +37,9 @@ with st.sidebar:
     )
 
     speech_rate = st.select_slider(
-        "Tốc độ đọc giọng AI mặc định:",
-        options=["-10%", "+0%", "+5%", "+10%", "+15%"],
-        value="+0%",
+        "Tốc độ đọc giọng AI:",
+        options=["+0%", "+10%", "+20%", "+30%", "+40%"],
+        value="+20%",
     )
 
     keep_bg_music = st.checkbox("Giữ lại nhạc nền video gốc", value=True)
@@ -87,7 +82,7 @@ def translate_all_segments_batch(segments, api_key):
     Bạn là một chuyên gia vietsub và lồng tiếng cho các video ngắn Douyin/TikTok về hướng dẫn chỉnh ảnh, bóp dáng, làm đẹp (Review app chỉnh ảnh/video).
     Dưới đây là danh sách các câu thoại tiếng Trung theo số thứ tự.
 
-    Nhiệm vụ: Dịch TẤT CẢ các câu thoại này sang TIẾNG VIỆT tự nhiên nhất.
+    Nhiệm vụ: Dịch TẤT CẢ các câu thoại này sang TIẾNG VIỆT tự nhiên, mượt mà.
 
     QUY TẮC CHUYỂN NGỮ BẮT BUỘC (QUAN TRỌNG):
     1. Các từ lóng/thuật ngữ chỉnh ảnh tiếng Trung phải dịch tự nhiên sang Tiếng Việt:
@@ -95,7 +90,7 @@ def translate_all_segments_batch(segments, api_key):
        - "拉长腿" -> Dịch là "kéo dài chân".
        - "瘦身" / "瘦腿" -> Dịch là "thon gọn người" / "làm thon chân".
        - "背景保护" -> Dịch là "bảo vệ phông nền" / "giữ phông nền".
-    2. Câu dịch phải CỰC KỲ NGẮN GỌN (dưới 8 từ/câu) để đọc kịp thời gian thoại gốc.
+    2. Câu dịch phải CỰC KỲ TỰ NHIÊN, DỒN DẬP chuẩn văn phong review Douyin/TikTok.
     3. Định dạng đầu ra BẮT BUỘC là mảng JSON thuần túy theo mẫu:
     [
       {{"id": 0, "vi": "Nội dung dịch câu 0"}},
@@ -194,7 +189,7 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
         try:
             # 1. Bóc thoại bằng Whisper
             with st.spinner(
-                "1/3 🎧 Whisper AI đang phân tích mốc thời gian từng câu..."
+                "1/3 🎧 Whisper AI đang phân tích mốc thời gian..."
             ):
                 segments = transcribe_chinese_segments("temp_input.mp4")
 
@@ -203,8 +198,7 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
 
             # 2. Dịch bằng Gemini AI
             with st.spinner(
-                "2/3 🤖 Gemini AI đang dịch câu ngắn gọn chuẩn"
-                " GenSubAI..."
+                "2/3 🤖 Gemini AI đang dịch chuẩn Review Douyin..."
             ):
                 translated_segments = translate_all_segments_batch(
                     segments, gemini_api_key
@@ -219,41 +213,24 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
                         f" {item['vi']}"
                     )
 
-            # 3. Lồng tiếng & Căn chỉnh chống trùng lặp
+            # 3. Lồng tiếng mượt mà nối tiếp
             with st.spinner(
-                "3/3 🎬 Đang xử lý âm thanh & Căn chỉnh chống chồng tiếng..."
+                "3/3 🎬 Đang xử lý ghép thoại nối tiếp dồn dập chuẩn"
+                " Douyin..."
             ):
                 audio_clips = []
+                current_timeline_time = 0.0
 
                 for i, item in enumerate(translated_segments):
                     if not item["vi"].strip():
                         continue
 
                     audio_filename = f"temp_seg_{i}.mp3"
-                    allowed_duration = item["end"] - item["start"]
 
-                    # Ước tính nếu câu nói quá dài so với thời lượng segment -> Tăng tốc rate cho Edge-TTS
-                    word_count = len(item["vi"].split())
-                    dynamic_rate = speech_rate
-
-                    if allowed_duration > 0:
-                        # Tốc độ đọc trung bình bình thường ~2.5 từ/giây
-                        est_duration = word_count / 2.5
-                        if est_duration > allowed_duration:
-                            # Cần tăng tốc độ đọc của Edge-TTS lên
-                            speed_boost = int(
-                                (est_duration / allowed_duration - 1) * 100
-                            )
-                            speed_boost = min(
-                                max(speed_boost, 10), 60
-                            )  # Giới hạn tăng tối đa 60%
-                            dynamic_rate = f"+{speed_boost}%"
-
-                    # Tạo voice với tốc độ động đã điều chỉnh
                     success = generate_tts_safe(
                         item["vi"],
                         selected_voice,
-                        dynamic_rate,
+                        speech_rate,
                         audio_filename,
                     )
 
@@ -261,12 +238,12 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
                         temp_files.append(audio_filename)
                         clip = AudioFileClip(audio_filename)
 
-                        # Giới hạn/cắt gọn độ dài clip để tuyệt đối không chờm sang câu sau
-                        if allowed_duration > 0 and clip.duration > allowed_duration:
-                            clip = clip.subclip(0, allowed_duration)
+                        # Căn thời gian nối tiếp mượt mà: chọn mốc lớn hơn giữa mốc start gốc và thời điểm câu trước vừa dứt
+                        start_time = max(item["start"], current_timeline_time)
+                        clip = clip.set_start(start_time)
 
-                        clip = clip.set_start(item["start"])
                         audio_clips.append(clip)
+                        current_timeline_time = start_time + clip.duration
 
                 video = VideoFileClip("temp_input.mp4")
 
