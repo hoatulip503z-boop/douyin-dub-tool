@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 import edge_tts
@@ -13,8 +14,8 @@ st.set_page_config(
 
 st.title("🎬 Tool Tự Động Dịch & Lồng Tiếng Khớp Nhịp (GenSubAI Style)")
 st.caption(
-    "Tự động nhận diện chuẩn timestamp -> Dịch mượt ngắn gọn -> Ghép thoại"
-    " đúng khớp mốc thời gian"
+    "Tự động bóc thoại -> Dịch gộp 100% Tiếng Việt -> Lồng tiếng chuẩn mốc"
+    " thời gian"
 )
 
 # --- CẤU HÌNH SIDEBAR ---
@@ -68,23 +69,38 @@ def transcribe_chinese_segments(video_path):
     return result.get("segments", [])
 
 
-# --- HÀM DỊCH TIẾNG VIỆT TỪNG ĐOẠN BẰNG GEMINI ---
-def translate_segment_with_gemini(text_zh, api_key):
-    clean_text = text_zh.strip()
-    if not clean_text:
-        return ""
+# --- HÀM DỊCH GỘP TẤT CẢ CÂU SANG TIẾNG VIỆT (TRÁNH RATE LIMIT) ---
+def translate_all_segments_batch(segments, api_key):
+    if not segments:
+        return []
 
     client = genai.Client(api_key=api_key.strip())
 
+    # Tạo danh sách câu thoại dạng index: câu tiếng trung
+    lines = [
+        f"{i}: {seg['text'].strip()}"
+        for i, seg in enumerate(segments)
+        if seg["text"].strip()
+    ]
+    input_text = "\n".join(lines)
+
     prompt = f"""
-    Bạn là biên tập viên vietsub/lồng tiếng cho các video Douyin/TikTok ngắn (Chỉnh ảnh, Review, Mẹo vặt).
-    Hãy dịch duy nhất câu thoại tiếng Trung sau sang Tiếng Việt.
+    Bạn là một biên tập viên vietsub và lồng tiếng video ngắn Douyin/TikTok (Mẹo chỉnh ảnh, Review).
+    Dưới đây là danh sách các câu thoại tiếng Trung theo số thứ tự dòng.
 
+    NHIỆM VỤ: Dịch TẤT CẢ các câu thoại này sang TIẾNG VIỆT.
     YÊU CẦU BẮT BUỘC:
-    1. Văn phong: Cực kỳ BẮT TREND, TỰ NHIÊN và NGẮN GỌN (khớp thời gian thoại).
-    2. Không dịch rườm rà, giải thích. Chỉ xuất ra duy nhất 1 câu Tiếng Việt ngắn gọn.
+    1. Văn phong: CỰC KỲ NGẮN GỌN, TỰ NHIÊN, BẮT TREND (để vừa khớp với thời gian đọc video ngắn).
+    2. Tuyệt đối CHỈ DỊCH SANG TIẾNG VIỆT, KHÔNG giữ lại tiếng Trung.
+    3. Định dạng đầu ra bắt buộc là một mảng JSON thuần túy theo mẫu:
+    [
+      {{"id": 0, "vi": "Nội dung dịch câu 0"}},
+      {{"id": 1, "vi": "Nội dung dịch câu 1"}}
+    ]
+    Không viết thêm bất kỳ câu giải thích hay văn bản nào khác ngoài đoạn JSON.
 
-    Tiếng Trung: "{clean_text}"
+    Danh sách câu tiếng Trung:
+    {input_text}
     """
 
     for model_name in ["gemini-3.6-flash", "gemini-2.5-flash"]:
@@ -94,23 +110,49 @@ def translate_segment_with_gemini(text_zh, api_key):
                 contents=prompt,
             )
             if response and response.text:
-                translated = response.text.strip()
-                # Lược bỏ ký tự thừa hoặc ngoặc kép nếu có
-                translated = re.sub(r'^["\']|["\']$', "", translated)
-                return translated
+                res_text = response.text.strip()
+
+                # Làm sạch chuỗi JSON nếu có thẻ markdown
+                if "```json" in res_text:
+                    res_text = res_text.split("```json")[1].split("```")[0]
+                elif "```" in res_text:
+                    res_text = res_text.split("```")[1].split("```")[0]
+
+                parsed_data = json.loads(res_text.strip())
+                trans_map = {
+                    item["id"]: item.get("vi", "") for item in parsed_data
+                }
+
+                results = []
+                for i, seg in enumerate(segments):
+                    vi_str = trans_map.get(i, "").strip()
+                    vi_str = re.sub(r'^["\']|["\']$', "", vi_str)
+                    results.append({
+                        "start": seg["start"],
+                        "end": seg["end"],
+                        "zh": seg["text"],
+                        "vi": vi_str,
+                    })
+                return results
         except Exception:
             continue
-    return clean_text
+
+    # Nếu lỗi JSON, trả về kết quả dự phòng
+    return [{
+        "start": s["start"],
+        "end": s["end"],
+        "zh": s["text"],
+        "vi": "Dịch thất bại, vui lòng kiểm tra lại API Key",
+    } for s in segments]
 
 
-# --- XỬ LÝ TẠO FILE ÂM THANH AN TOÀN ---
+# --- TẠO FILE ÂM THANH AN TOÀN ---
 async def generate_single_tts_async(text, voice, rate, output_path):
     communicate = edge_tts.Communicate(text, voice, rate=rate)
     await communicate.save(output_path)
 
 
 def generate_tts_safe(text, voice, rate, output_path):
-    # Loại bỏ khoảng trắng và ký tự không hợp lệ
     clean_text = text.strip()
     if not clean_text:
         return False
@@ -148,52 +190,48 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
         temp_files = []
 
         try:
-            # 1. Bóc thoại theo mốc thời gian
+            # 1. Bóc thoại bằng Whisper
             with st.spinner(
-                "1/3 🎧 Whisper AI đang phân tích và ghi nhận mốc thời gian"
-                " từng câu..."
+                "1/3 🎧 Whisper AI đang phân tích và nhận diện mốc thời"
+                " gian..."
             ):
                 segments = transcribe_chinese_segments("temp_input.mp4")
 
             if not segments:
                 st.warning("Không tìm thấy lời thoại trong video!")
 
-            # 2. Dịch từng segment
+            # 2. Dịch toàn bộ sang Tiếng Việt trong 1 lần gọi (Batch)
             with st.spinner(
-                "2/3 🤖 Gemini AI đang dịch từng câu ngắn gọn chuẩn"
-                " GenSubAI..."
+                "2/3 🤖 Gemini AI đang dịch toàn bộ câu thoại sang Tiếng Việt"
+                " mượt mà..."
             ):
-                translated_segments = []
-                for seg in segments:
-                    vi_text = translate_segment_with_gemini(
-                        seg["text"], gemini_api_key
-                    )
-                    if vi_text.strip():
-                        translated_segments.append({
-                            "start": seg["start"],
-                            "end": seg["end"],
-                            "vi": vi_text,
-                        })
-
-            # Hiển thị kết quả dịch từng câu
-            st.success("📝 **Bản dịch từng mốc thời gian:**")
-            for item in translated_segments:
-                st.write(
-                    f"⏱️ **[{item['start']:.1f}s - {item['end']:.1f}s]** :"
-                    f" {item['vi']}"
+                translated_segments = translate_all_segments_batch(
+                    segments, gemini_api_key
                 )
 
-            # 3. Tạo file audio lồng ghép chuẩn timestamp
+            # Hiển thị kết quả dịch Tiếng Việt chuẩn
+            st.success("📝 **Bản dịch Tiếng Việt từng mốc thời gian:**")
+            for item in translated_segments:
+                if item["vi"].strip():
+                    st.write(
+                        f"⏱️ **[{item['start']:.1f}s - {item['end']:.1f}s]** :"
+                        f" {item['vi']}"
+                    )
+
+            # 3. Lồng tiếng và ghép khớp thời gian
             with st.spinner(
-                "3/3 🎬 Đang tạo giọng đọc AI & Ghép khớp từng giây vào"
+                "3/3 🎬 Đang tạo giọng đọc AI & Ghép đúng thời điểm vào"
                 " video..."
             ):
                 audio_clips = []
 
                 for i, item in enumerate(translated_segments):
+                    if not item["vi"].strip():
+                        continue
+
                     audio_filename = f"temp_seg_{i}.mp3"
 
-                    # Tạo file giọng đọc an toàn
+                    # Tạo file âm thanh từng câu
                     success = generate_tts_safe(
                         item["vi"],
                         selected_voice,
@@ -210,7 +248,6 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
 
                 video = VideoFileClip("temp_input.mp4")
 
-                # Trộn các đoạn voice đã lồng tiếng
                 if audio_clips:
                     dubbed_audio = CompositeAudioClip(audio_clips)
 
