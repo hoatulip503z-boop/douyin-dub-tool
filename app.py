@@ -65,7 +65,7 @@ def transcribe_chinese(video_path):
 # --- HAM DICH TIENG VIET HAY BANG GEMINI AI ---
 def translate_with_gemini(text_zh, api_key):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
 
     prompt = f"""
     Bạn là một biên tập viên chuyên dịch thuật video Douyin/TikTok ngắn. 
