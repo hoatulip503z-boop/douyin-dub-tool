@@ -5,6 +5,7 @@ import re
 import edge_tts
 from google import genai
 from moviepy.editor import AudioFileClip, CompositeAudioClip, VideoFileClip
+import moviepy.audio.fx.all as afx
 import streamlit as st
 import whisper
 
@@ -95,7 +96,7 @@ def translate_all_segments_batch(segments, api_key):
        - "拉长腿" -> Dịch là "kéo dài chân".
        - "瘦身" / "瘦腿" -> Dịch là "thon gọn người" / "làm thon chân".
        - "背景保护" -> Dịch là "bảo vệ phông nền" / "giữ phông nền".
-    2. Câu dịch phải CỰC KỲ NGẮN GỌN (dưới 10 từ/câu) để đảm bảo không bị đọc đè sang câu sau.
+    2. Câu dịch phải CỰC KỲ NGẮN GỌN (dưới 8 từ/câu) để đảm bảo đọc kịp thời gian thoại gốc.
     3. Định dạng đầu ra BẮT BUỘC là mảng JSON thuần túy theo mẫu:
     [
       {{"id": 0, "vi": "Nội dung dịch câu 0"}},
@@ -230,6 +231,8 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
                         continue
 
                     audio_filename = f"temp_seg_{i}.mp3"
+
+                    # Tạo voice mặc định
                     success = generate_tts_safe(
                         item["vi"],
                         selected_voice,
@@ -241,17 +244,21 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
                         temp_files.append(audio_filename)
                         clip = AudioFileClip(audio_filename)
 
-                        # Thời lượng cho phép của câu thoại này trong video
                         allowed_duration = item["end"] - item["start"]
 
-                        # Nếu file âm thanh dài hơn mốc thời gian cho phép -> Tự động ép tốc độ ngắn lại
-                        if clip.duration > allowed_duration and allowed_duration > 0.3:
+                        # Nếu âm thanh dài hơn thời gian cho phép -> tăng tốc độ clip dùng module afx.speedx
+                        if (
+                            clip.duration > allowed_duration
+                            and allowed_duration > 0.3
+                        ):
                             speed_factor = clip.duration / allowed_duration
-                            clip = clip.speedx(speed_factor)
+                            clip = afx.speedx(clip, factor=speed_factor)
 
-                        # Giới hạn cứng độ dài clip để tuyệt đối không tràn sang câu tiếp theo
+                        # Cắt chính xác phạm vi phát
                         if allowed_duration > 0:
-                            clip = clip.subclip(0, min(clip.duration, allowed_duration))
+                            clip = clip.subclip(
+                                0, min(clip.duration, allowed_duration)
+                            )
 
                         clip = clip.set_start(item["start"])
                         audio_clips.append(clip)
