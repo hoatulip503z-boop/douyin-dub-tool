@@ -27,16 +27,18 @@ with st.sidebar:
     st.subheader("🔊 Tùy Chỉnh Âm Thanh")
     voice_option = st.selectbox(
         "Chọn giọng đọc AI:",
-        options=["vi-VN-NamMinhNeural", "vi-VN-HoaiMyNeural"],
+        options=["vi-VN-HoaiMyNeural", "vi-VN-NamMinhNeural"],
         format_func=lambda x: (
-            "Giọng Nam (Nam Minh)" if "Nam" in x else "Giọng Nữ (Hoài Mỹ)"
+            "Giọng Nữ truyền cảm (Hoài Mỹ)"
+            if "HoaiMy" in x
+            else "Giọng Nam tự nhiên (Nam Minh)"
         ),
     )
 
     speech_rate = st.select_slider(
-        "Tốc độ đọc giọng AI:",
-        options=["-10%", "0%", "+10%", "+15%", "+20%", "+30%"],
-        value="+10%",
+        "Tốc độ đọc giọng AI (Nên để 0% hoặc +5% để chuẩn khớp video):",
+        options=["-10%", "0%", "+5%", "+10%", "+15%", "+20%"],
+        value="0%",
     )
 
     keep_bg_music = st.checkbox("Giữ lại nhạc nền video gốc", value=True)
@@ -61,22 +63,22 @@ def transcribe_chinese(video_path):
     return result["text"]
 
 
-# --- HÀM DỊCH TIẾNG VIỆT BẰNG GEMINI API ---
+# --- HÀM DỊCH TIẾNG VIỆT CHUẨN GENSUBAI BẰNG GEMINI API ---
 def translate_with_gemini(text_zh, api_key):
     client = genai.Client(api_key=api_key.strip())
 
     prompt = f"""
-    Bạn là một biên tập viên chuyên dịch thuật video Douyin/TikTok ngắn. 
-    Hãy dịch toàn bộ đoạn thoại tiếng Trung sau sang Tiếng Việt.
-    Yêu cầu:
-    - Văn phong tự nhiên, bắt trend, nói chuyện hợp ngữ cảnh video ngắn/review.
-    - Không dịch thô/dịch máy, lược bỏ các từ thừa để câu từ ngắn gọn.
-    - Chỉ trả về bản dịch Tiếng Việt duy nhất, không giải thích gì thêm.
+    Bạn là một chuyên gia biên dịch nội dung video ngắn TikTok/Douyin (Review, Mẹo chỉnh ảnh, Tip/Trick).
+    Hãy dịch đoạn thoại tiếng Trung dưới đây sang Tiếng Việt.
+
+    YÊU CẦU BẮT BUỘC:
+    1. Văn phong: Cực kỳ tự nhiên, bắt trend, cuốn hút như các reviewer Việt Nam nổi tiếng.
+    2. Độ ngắn gọn: Câu dịch phải cực kỳ NGẮN GỌN và SÚC TÍCH để khớp chính xác với thời lượng video ngắn, không dùng từ rườm rà.
+    3. Định dạng: Chỉ xuất ra bản dịch Tiếng Việt duy nhất, không ghi thêm bất kỳ lời giải thích nào.
 
     Thoại tiếng Trung: "{text_zh}"
     """
 
-    # Ưu tiên chạy gemini-3.6-flash, tự động chuyển sang gemini-2.5-flash nếu cần
     for model_name in ["gemini-3.6-flash", "gemini-2.5-flash"]:
         try:
             response = client.models.generate_content(
@@ -103,6 +105,7 @@ def process_video(video_path, audio_path, output_path, keep_bg, bg_volume):
     video = VideoFileClip(video_path)
     vi_voice = AudioFileClip(audio_path)
 
+    # Nếu file âm thanh AI dài hơn video, điều chỉnh cắt hợp lý
     if keep_bg and video.audio is not None:
         bg_audio = video.audio.volumex(bg_volume / 100.0)
         final_audio = CompositeAudioClip([bg_audio, vi_voice])
@@ -123,6 +126,11 @@ uploaded_video = st.file_uploader(
     "Tải video Douyin gốc tiếng Trung lên (.mp4)", type=["mp4", "mov"]
 )
 
+if uploaded_video:
+    temp_video_path = "temp_input.mp4"
+    with open(temp_video_path, "wb") as f:
+        f.write(uploaded_video.read())
+
 if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng", type="primary"):
     if not uploaded_video:
         st.error("⚠️ Vui lòng tải video lên trước!")
@@ -131,36 +139,37 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng", type="pri
             "⚠️ Vui lòng nhập Gemini API Key ở thanh bên trái để AI dịch!"
         )
     else:
-        temp_video_path = "temp_input.mp4"
         temp_audio_path = "temp_voice.mp3"
         output_video_path = "output_dubbed.mp4"
 
         try:
-            with open(temp_video_path, "wb") as f:
-                f.write(uploaded_video.read())
-
             with st.spinner(
                 "1/3 🎧 Whisper AI đang lắng nghe và bóc thoại Tiếng Trung..."
             ):
-                zh_text = transcribe_chinese(temp_video_path)
+                zh_text = transcribe_chinese("temp_input.mp4")
                 st.info(f"🗣️ **Thoại tiếng Trung nhận diện được:** {zh_text}")
 
             with st.spinner(
-                "2/3 🤖 Gemini AI đang dịch sang Tiếng Việt mượt mà..."
+                "2/3 🤖 Gemini AI đang dịch sang Tiếng Việt bắt trend ngắn gọn..."
             ):
                 vi_text = translate_with_gemini(zh_text, gemini_api_key)
-                st.success(f"📝 **Bản dịch Tiếng Việt (AI):** {vi_text}")
+
+            # CHỈNH SỬA NỘI DUNG DỊCH TRỰC TIẾP TRÊN GIAO DIỆN
+            st.success("📝 **Bản dịch Tiếng Việt (Có thể chỉnh sửa theo ý bạn bên dưới):**")
+            edited_vi_text = st.text_area(
+                "Bản dịch Tiếng Việt:", value=vi_text, height=100
+            )
 
             with st.spinner(
                 "3/3 🎬 Đang tạo giọng đọc AI & Ghép vào video..."
             ):
                 asyncio.run(
                     generate_tts(
-                        vi_text, voice_option, speech_rate, temp_audio_path
+                        edited_vi_text, voice_option, speech_rate, temp_audio_path
                     )
                 )
                 process_video(
-                    temp_video_path,
+                    "temp_input.mp4",
                     temp_audio_path,
                     output_video_path,
                     keep_bg_music,
@@ -182,6 +191,6 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng", type="pri
             st.error(f"❌ Xảy ra lỗi trong quá trình xử lý: {str(e)}")
 
         finally:
-            for p in [temp_video_path, temp_audio_path]:
+            for p in ["temp_input.mp4", "temp_voice.mp3"]:
                 if os.path.exists(p):
                     os.remove(p)
