@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("🎬 Tool Tự Động Dịch & Lồng Tiếng Khớp Nhịp Douyin")
-st.caption("Tự động bóc thoại -> Dịch chuẩn Review -> Lồng tiếng dồn dập mượt mà")
+st.caption("Tự động bóc thoại -> Dịch chuẩn Review -> Lồng tiếng mượt như mẫu")
 
 # --- CẤU HÌNH SIDEBAR ---
 with st.sidebar:
@@ -25,7 +25,7 @@ with st.sidebar:
 
     st.subheader("🔊 Tùy Chỉnh Giọng Đọc AI")
     voice_options = {
-        "vi-VN-HoaiMyNeural": "Giọng Nữ Review Douyin (Hoài Mỹ)",
+        "vi-VN-HoaiMyNeural": "Giọng Nữ Review Douyin Chuẩn (Hoài Mỹ)",
         "vi-VN-NamMinhNeural": "Giọng Nam Đọc Nhanh (Nam Minh)",
         "vi-VN-NamMinhMultilingualNeural": "Giọng Nam Chuẩn Pro",
     }
@@ -38,8 +38,8 @@ with st.sidebar:
 
     speech_rate = st.select_slider(
         "Tốc độ đọc giọng AI:",
-        options=["+0%", "+10%", "+20%", "+30%", "+40%"],
-        value="+20%",
+        options=["-5%", "+0%", "+5%", "+10%", "+15%"],
+        value="+0%",
     )
 
     keep_bg_music = st.checkbox("Giữ lại nhạc nền video gốc", value=True)
@@ -64,7 +64,7 @@ def transcribe_chinese_segments(video_path):
     return result.get("segments", [])
 
 
-# --- HÀM DỊCH GỘP BẰNG GEMINI CHUẨN THUẬT NGỮ REVIEW ---
+# --- HÀM DỊCH GỘP BẰNG GEMINI CHUẨN MẪU DOUYIN ---
 def translate_all_segments_batch(segments, api_key):
     if not segments:
         return []
@@ -79,24 +79,26 @@ def translate_all_segments_batch(segments, api_key):
     input_text = "\n".join(lines)
 
     prompt = f"""
-    Bạn là một chuyên gia vietsub và lồng tiếng cho các video ngắn Douyin/TikTok về hướng dẫn chỉnh ảnh, bóp dáng, làm đẹp (Review app chỉnh ảnh/video).
-    Dưới đây là danh sách các câu thoại tiếng Trung theo số thứ tự.
+    Bạn là chuyên gia vietsub và lồng tiếng video ngắn Douyin/TikTok hướng dẫn chỉnh ảnh/bóp dáng (App Xingtu/Meitu).
+    Hãy dịch danh sách các câu tiếng Trung sau đây sang Tiếng Việt.
 
-    Nhiệm vụ: Dịch TẤT CẢ các câu thoại này sang TIẾNG VIỆT tự nhiên, mượt mà.
-
-    QUY TẮC CHUYỂN NGỮ BẮT BUỘC (QUAN TRỌNG):
-    1. Các từ lóng/thuật ngữ chỉnh ảnh tiếng Trung phải dịch tự nhiên sang Tiếng Việt:
-       - "P图" / "修图" -> Dịch là "chỉnh ảnh", "bóp dáng", "sửa hình" (TUYỆT ĐỐI KHÔNG DỊCH THÀNH chữ "P" đơn lẻ).
-       - "拉长腿" -> Dịch là "kéo dài chân".
-       - "瘦身" / "瘦腿" -> Dịch là "thon gọn người" / "làm thon chân".
-       - "背景保护" -> Dịch là "bảo vệ phông nền" / "giữ phông nền".
-    2. Câu dịch phải CỰC KỲ TỰ NHIÊN, DỒN DẬP chuẩn văn phong review Douyin/TikTok.
-    3. Định dạng đầu ra BẮT BUỘC là mảng JSON thuần túy theo mẫu:
+    QUY TẮC DỊCH CHUẨN VĂN PHONG REVIEW (GIỐNG HỆT KỊCH BẢN MẪU):
+    1. Dịch CỰC KỲ NGẮN GỌN, súc tích, tự nhiên, văn phong nói ngọt ngào, bắt trend:
+       - "P图" -> "chỉnh dáng" / "chỉnh hình" (TUYỆT ĐỐI KHÔNG để chữ P).
+       - "背景" / "背景变弯" -> "hậu cảnh" / "hậu cảnh bị méo mó".
+       - "瘦身" -> "làm thon người" / "bóp dáng".
+       - "瘦肩" -> "làm thon vai".
+       - "天鹅颈" -> "cổ thiên nga".
+       - "拉长腿" -> "kéo dài chân".
+       - "提臀" / "丰臀" -> "nâng mông" / "chỉnh hông".
+       - "美白" / "磨皮" -> "làm trắng da" / "làm mịn da".
+    2. Độ dài mỗi câu dịch chỉ nên từ 4 - 10 từ để đảm bảo khớp hoàn hảo với nhịp video.
+    3. Trả về ĐÚNG định dạng JSON mảng thuần túy:
     [
       {{"id": 0, "vi": "Nội dung dịch câu 0"}},
       {{"id": 1, "vi": "Nội dung dịch câu 1"}}
     ]
-    Không viết thêm bất kỳ câu giải thích nào khác ngoài đoạn JSON.
+    Không kèm lời dẫn giải thích nào khác.
 
     Danh sách câu tiếng Trung:
     {input_text}
@@ -197,9 +199,7 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
                 st.warning("Không tìm thấy lời thoại trong video!")
 
             # 2. Dịch bằng Gemini AI
-            with st.spinner(
-                "2/3 🤖 Gemini AI đang dịch chuẩn Review Douyin..."
-            ):
+            with st.spinner("2/3 🤖 Gemini AI đang dịch chuẩn kịch bản mẫu..."):
                 translated_segments = translate_all_segments_batch(
                     segments, gemini_api_key
                 )
@@ -215,8 +215,7 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
 
             # 3. Lồng tiếng mượt mà nối tiếp
             with st.spinner(
-                "3/3 🎬 Đang xử lý ghép thoại nối tiếp dồn dập chuẩn"
-                " Douyin..."
+                "3/3 🎬 Đang ghép giọng thoại mượt mà tự nhiên..."
             ):
                 audio_clips = []
                 current_timeline_time = 0.0
@@ -238,7 +237,7 @@ if st.button("🚀 Bắt Đầu Tự Động Dịch & Lồng Tiếng Khớp Nh�
                         temp_files.append(audio_filename)
                         clip = AudioFileClip(audio_filename)
 
-                        # Căn thời gian nối tiếp mượt mà: chọn mốc lớn hơn giữa mốc start gốc và thời điểm câu trước vừa dứt
+                        # Căn thời gian nối tiếp tự nhiên
                         start_time = max(item["start"], current_timeline_time)
                         clip = clip.set_start(start_time)
 
